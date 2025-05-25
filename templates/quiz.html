@@ -286,7 +286,7 @@
     <div class="logo">LearnAI</div>
     <ul class="nav-links">
       <li><a href="/dashboards" title="Home">🏠 Dashboards</a></li>
-      <li><a href="/dashboard/{{ quiz_id }}" title="Dashboard">📊 Dashboard</a></li>
+      <li><a href="#" onclick="navigateToDashboard(event)" title="Dashboard">📊 Dashboard</a></li>
       <li><a href="/quiz/{{ quiz_id }}" class="active" title="Take Quiz">✍️ Practice Quiz</a></li>
     </ul>
   </nav>
@@ -323,6 +323,42 @@
     let currentStreak = 0;
     let isSubmitted = false;
     let questionOrder = [];  // Track shuffled question order
+
+    // Add function to handle dashboard navigation with token
+    function navigateToDashboard(event) {
+      event.preventDefault();
+      
+      // Try to get token from localStorage first
+      let token = localStorage.getItem('access_token');
+      
+      // If no token in localStorage, try sessionStorage
+      if (!token) {
+        token = sessionStorage.getItem('dashboard_token');
+      }
+      
+      // If still no token, redirect to login
+      if (!token) {
+        window.location.href = '/login';
+        return;
+      }
+      
+      // Create a form to submit the token with the request
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/dashboard/${quizId}`;
+      form.style.display = 'none';
+      
+      // Add token as a hidden field
+      const tokenField = document.createElement('input');
+      tokenField.type = 'hidden';
+      tokenField.name = 'token';
+      tokenField.value = token;
+      form.appendChild(tokenField);
+      
+      // Submit the form
+      document.body.appendChild(form);
+      form.submit();
+    }
 
     function shuffleArray(array) {
       for (let i = array.length - 1; i > 0; i--) {

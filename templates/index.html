@@ -205,19 +205,19 @@
             </div>
         </div>
         
-        <div class="input-section">
+        <div class="input-section" id="input-section">
             <div class="tabs">
-                <button class="tab active" onclick="showTab('text')">Text Input</button>
-                <button class="tab" onclick="showTab('youtube')">YouTube Video</button>
+                <button class="tab" onclick="showTab('text')">Text Input</button>
+                <button class="tab active" onclick="showTab('youtube')">YouTube Video</button>
             </div>
 
-            <div id="textTab" class="tab-content active">
+            <div id="textTab" class="tab-content">
                 <h3>Enter your learning material</h3>
                 <p style="color: #666; margin-bottom: 15px;">Paste any text, article, or notes you want to learn from:</p>
                 <textarea id="notesInput" placeholder="Paste your content here..."></textarea>
             </div>
 
-            <div id="youtubeTab" class="tab-content">
+            <div id="youtubeTab" class="tab-content active">
                 <h3>Learn from YouTube</h3>
                 <p style="color: #666; margin-bottom: 15px;">Enter a YouTube video URL to generate study materials:</p>
                 <input type="text" id="youtubeInput" placeholder="https://www.youtube.com/watch?v=...">

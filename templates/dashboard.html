@@ -375,8 +375,8 @@
     <nav class="sidenav">
         <div class="logo">LearnAI</div>
         <ul class="nav-links">
-            <li><a href="/dashboards" title="Home">🏠 Dashboards</a></li>
-            <li><a href="/dashboard/{{ session_id }}" class="active" title="Dashboard">📊 Dashboard</a></li>
+            <li><a href="#" onclick="navigateToDashboards(event)" title="Home">🏠 Dashboards</a></li>
+            <li><a href="#" onclick="navigateToDashboard(event)" class="active" title="Dashboard">📊 Dashboard</a></li>
             <li><a href="/quiz/{{ session_id }}" title="Take Quiz">✍️ Take Quiz</a></li>
         </ul>
     </nav>
@@ -441,6 +441,78 @@
     </div>
 
     <script>
+        // Add function to handle dashboard navigation with token
+        function navigateToDashboard(event) {
+            event.preventDefault();
+            
+            // Try to get token from localStorage first
+            let token = localStorage.getItem('access_token');
+            
+            // If no token in localStorage, try sessionStorage
+            if (!token) {
+                token = sessionStorage.getItem('dashboard_token');
+            }
+            
+            // If still no token, redirect to login
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Create a form to submit the token with the request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/dashboard/{{ session_id }}`;
+            form.style.display = 'none';
+            
+            // Add token as a hidden field
+            const tokenField = document.createElement('input');
+            tokenField.type = 'hidden';
+            tokenField.name = 'token';
+            tokenField.value = token;
+            form.appendChild(tokenField);
+            
+            // Submit the form
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        // Add function to handle dashboards navigation with token
+        function navigateToDashboards(event) {
+            event.preventDefault();
+            
+            // Try to get token from localStorage first
+            let token = localStorage.getItem('access_token');
+            
+            // If no token in localStorage, try sessionStorage
+            if (!token) {
+                token = sessionStorage.getItem('dashboard_token');
+            }
+            
+            // If still no token, redirect to login
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Create a form to submit the token with the request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/dashboards';
+            form.style.display = 'none';
+            
+            // Add token as a hidden field
+            const tokenField = document.createElement('input');
+            tokenField.type = 'hidden';
+            tokenField.name = 'token';
+            tokenField.value = token;
+            form.appendChild(tokenField);
+            
+            // Submit the form
+            document.body.appendChild(form);
+            form.submit();
+        }
+
         // Initialize marked with options
         marked.setOptions({
             breaks: true,
@@ -545,8 +617,33 @@
                 });
 
                 if (response.ok) {
-                    // Redirect to home page after successful deletion
-                    window.location.href = '/';
+                    // Get token for authentication
+                    let token = localStorage.getItem('access_token');
+                    if (!token) {
+                        token = sessionStorage.getItem('dashboard_token');
+                    }
+                    
+                    if (!token) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    
+                    // Create a form to submit the token with the request
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '/dashboards';
+                    form.style.display = 'none';
+                    
+                    // Add token as a hidden field
+                    const tokenField = document.createElement('input');
+                    tokenField.type = 'hidden';
+                    tokenField.name = 'token';
+                    tokenField.value = token;
+                    form.appendChild(tokenField);
+                    
+                    // Submit the form
+                    document.body.appendChild(form);
+                    form.submit();
                 } else {
                     const error = await response.json();
                     alert(error.detail || 'Failed to delete dashboard');
