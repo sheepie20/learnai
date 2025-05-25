@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+sqlalchemy
+aiosqlite
+python-dotenv
+together
+aiohttp
+jinja2
+python-multipart
+pytube
+pydantic
+openai-whisper
+yt-dlp
+ffmpeg-python
+passlib[bcrypt]
+python-jose[cryptography]
