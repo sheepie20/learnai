@@ -6,18 +6,14 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict
 from ai_service import NoteTaker, TranscriptionService, QuizGenerator
-import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-import shutil
-import os
 import uuid
 from models import init_db, User
 from database import DatabaseService, engine
-from sqlalchemy.ext.asyncio import AsyncEngine
 from auth import (
-    Token, UserCreate, UserResponse, hash_password, verify_password, create_access_token,
+    Token, UserCreate, hash_password, verify_password, create_access_token,
     get_current_active_user, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY, ALGORITHM, REFRESH_TOKEN_EXPIRE_DAYS
 )
@@ -56,14 +52,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 note_taker = NoteTaker()
 transcription_service = TranscriptionService()
 quiz_generator = QuizGenerator()
-
-ffmpeg_dir = os.path.expanduser("~/ffmpeg_bin")
-os.environ["PATH"] = f"{ffmpeg_dir}:" + os.environ.get("PATH", "")
-
-if shutil.which("ffmpeg") is None:
-    print("ffmpeg not found in PATH!")
-else:
-    print(f"ffmpeg found: {shutil.which('ffmpeg')}")
 
 async def generate_more_questions(session_id: str, notes: str):
     """Background task to generate more questions"""
@@ -163,7 +151,6 @@ async def generate_notes(
                 detail="Please provide either text or a YouTube URL"
             )
 
-        # Step 2: Clean up the text
         cleaned_text = note_taker._preprocess_text(raw_text)
         if not cleaned_text.strip():
             raise HTTPException(
