@@ -18,6 +18,9 @@ from auth import (
     SECRET_KEY, ALGORITHM, REFRESH_TOKEN_EXPIRE_DAYS
 )
 
+# Update token expiration time to 30 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days * 24 hours * 60 minutes
+
 # Initialize database
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -514,6 +517,139 @@ async def delete_dashboard(session_id: str):
     except Exception as e:
         print(f"Error deleting dashboard: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete dashboard")
+
+@app.get("/profile")
+async def profile_page(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
+    # Get user's dashboards
+    dashboards = await DatabaseService.get_user_dashboards(current_user.id)
+    
+    # Calculate statistics
+    total_dashboards = len(dashboards)
+    total_quizzes = sum(1 for d in dashboards if d.total_questions > 0)
+    
+    # Calculate average score
+    total_correct = sum(d.total_correct for d in dashboards)
+    total_questions = sum(d.total_questions for d in dashboards)
+    avg_score = round((total_correct / total_questions * 100) if total_questions > 0 else 0, 1)
+    
+    # Get best streak across all dashboards
+    best_streak = max((d.best_streak for d in dashboards), default=0)
+    
+    return templates.TemplateResponse(
+        "profile.html",
+        {
+            "request": request,
+            "username": current_user.username,
+            "email": current_user.email,
+            "joined_date": current_user.created_at,
+            "total_dashboards": total_dashboards,
+            "total_quizzes": total_quizzes,
+            "avg_score": avg_score,
+            "best_streak": best_streak
+        }
+    )
+
+@app.post("/profile")
+async def post_profile(
+    request: Request,
+    token: str = Form(...)  # Get token from form data
+):
+    # Manually validate the token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Get the user from database
+        user = await DatabaseService.get_user_by_username(username)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+            
+        # Get user's dashboards
+        dashboards = await DatabaseService.get_user_dashboards(user.id)
+        
+        # Calculate statistics
+        total_dashboards = len(dashboards)
+        total_quizzes = sum(1 for d in dashboards if d.get('total_questions', 0) > 0)
+        
+        # Calculate average score
+        total_correct = sum(d.get('total_correct', 0) for d in dashboards)
+        total_questions = sum(d.get('total_questions', 0) for d in dashboards)
+        avg_score = round((total_correct / total_questions * 100) if total_questions > 0 else 0, 1)
+        
+        # Get best streak across all dashboards
+        best_streak = max((d.get('best_streak', 0) for d in dashboards), default=0)
+        
+        # Return the profile template
+        return templates.TemplateResponse(
+            "profile.html",
+            {
+                "request": request,
+                "username": user.username,
+                "email": user.email,
+                "joined_date": user.created_at,
+                "total_dashboards": total_dashboards,
+                "total_quizzes": total_quizzes,
+                "avg_score": avg_score,
+                "best_streak": best_streak
+            }
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.delete("/api/user/delete")
+async def delete_user(current_user: User = Depends(get_current_active_user)):
+    try:
+        # Get all user's dashboards
+        dashboards = await DatabaseService.get_user_dashboards(current_user.id)
+        
+        # Delete all dashboards
+        for dashboard in dashboards:
+            await DatabaseService.delete_dashboard(dashboard['id'])
+        
+        # Delete the user
+        await DatabaseService.delete_user(current_user.id)
+        
+        return {"message": "User account deleted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
+@app.post("/quiz/{quiz_id}")
+async def post_quiz(
+    request: Request,
+    quiz_id: str,
+    token: str = Form(...)  # Get token from form data
+):
+    # Manually validate the token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Get the user from database
+        user = await DatabaseService.get_user_by_username(username)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+            
+        # Check if quiz exists
+        dashboard = await DatabaseService.get_dashboard(quiz_id)
+        if not dashboard:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        return templates.TemplateResponse(
+            "quiz.html", 
+            {"request": request, "quiz_id": quiz_id}
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 if __name__ == "__main__":
     import uvicorn

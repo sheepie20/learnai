@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from models import Base, Dashboard, QuizAttempt, User
 import asyncio
 import os
@@ -232,3 +232,18 @@ class DatabaseService:
         except Exception as e:
             print(f"Error getting user dashboards: {e}")
             raise
+
+    @classmethod
+    async def delete_user(cls, user_id: int) -> bool:
+        """Delete a user and all associated data."""
+        async with async_session() as session:
+            try:
+                # Delete the user
+                query = delete(User).where(User.id == user_id)
+                await session.execute(query)
+                await session.commit()
+                return True
+            except Exception as e:
+                print(f"Error deleting user: {e}")
+                await session.rollback()
+                return False

@@ -375,9 +375,11 @@
     <nav class="sidenav">
         <div class="logo">LearnAI</div>
         <ul class="nav-links">
-            <li><a href="#" onclick="navigateToDashboards(event)" title="Home">🏠 Dashboards</a></li>
-            <li><a href="#" onclick="navigateToDashboard(event)" class="active" title="Dashboard">📊 Dashboard</a></li>
+            <li><a href="/" title="Home">🏠 Home</a></li>
+            <li><a href="#" onclick="navigateToDashboards(event)" title="My Dashboards">📚 My Dashboards</a></li>
+            <li><a href="#" class="active" title="Dashboard">📊 Dashboard</a></li>
             <li><a href="/quiz/{{ session_id }}" title="Take Quiz">✍️ Take Quiz</a></li>
+            <li><a href="#" onclick="navigateToProfile(event)" title="Profile">👤 Profile</a></li>
         </ul>
     </nav>
 
@@ -499,6 +501,42 @@
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/dashboards';
+            form.style.display = 'none';
+            
+            // Add token as a hidden field
+            const tokenField = document.createElement('input');
+            tokenField.type = 'hidden';
+            tokenField.name = 'token';
+            tokenField.value = token;
+            form.appendChild(tokenField);
+            
+            // Submit the form
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        // Add function to handle profile navigation with token
+        function navigateToProfile(event) {
+            event.preventDefault();
+            
+            // Try to get token from localStorage first
+            let token = localStorage.getItem('access_token');
+            
+            // If no token in localStorage, try sessionStorage
+            if (!token) {
+                token = sessionStorage.getItem('dashboard_token');
+            }
+            
+            // If still no token, redirect to login
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Create a form to submit the token with the request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/profile';
             form.style.display = 'none';
             
             // Add token as a hidden field
