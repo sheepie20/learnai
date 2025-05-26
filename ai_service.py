@@ -188,13 +188,7 @@ class ChatBot:
     def __init__(self, notes: str):
         self.api_key = os.getenv("TOGETHER_API_KEY")
         self.api_url = "https://api.together.xyz/v1/chat/completions"
-        self.system_message = f"""You are a helpful study assistant.
-Please answer questions using only the information in the notes below:
----
-{notes}
----
-If you’re not sure about the answer, it’s okay to say “I don’t know.”
-If the question is unrelated to the notes, just let me know that it’s outside the scope."""
+        self.system_message = f"""You are a helpful study assistant.\n\nPlease answer questions using only the information in the notes below:\n---\n{notes}\n---\n\nFormatting instructions:\n- Avoid using LaTeX or math formatting unless absolutely necessary.\n- If you must include math, use plain text and keep it simple.\n- Use Markdown for code, lists, and tables only if it improves clarity.\n\nIf you’re not sure about the answer, it’s okay to say “I don’t know.”\nIf the question is unrelated to the notes, just let me know that it’s outside the scope."""
         self.history: List[Dict[str, str]] = []  # List of {role: 'user'/'assistant', content: str}
 
     def add_user_message(self, message: str):
@@ -222,7 +216,18 @@ If the question is unrelated to the notes, just let me know that it’s outside 
                     "temperature": 0.7
                 }
             ) as response:
-                result = await response.json()
-                ai_message = result["choices"][0]["message"]["content"]
-                self.add_assistant_message(ai_message)
-                return ai_message
+                try:
+                    result = await response.json()
+                    if (
+                        "choices" not in result or
+                        not result["choices"] or
+                        "message" not in result["choices"][0] or
+                        "content" not in result["choices"][0]["message"]
+                    ):
+                        raise Exception(f"Malformed response from Together API: {result}")
+                    ai_message = result["choices"][0]["message"]["content"]
+                    self.add_assistant_message(ai_message)
+                    return ai_message
+                except Exception as e:
+                    print(f"[ChatBot ERROR] Failed to get response: {e}")
+                    return "Sorry, I couldn't get a response from the AI service. Please try again later."
