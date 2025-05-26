@@ -8,15 +8,19 @@ from typing import Optional, List, Dict
 from ai_service import NoteTaker, TranscriptionService, QuizGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+import secrets
+from fastapi.responses import RedirectResponse
 
 import uuid
 from models import init_db, User
-from database import DatabaseService, engine
+from database import DatabaseService, engine, async_session
 from auth import (
     Token, UserCreate, hash_password, verify_password, create_access_token,
     get_current_active_user, get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY, ALGORITHM, REFRESH_TOKEN_EXPIRE_DAYS
 )
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+import os
 
 # Update token expiration time to 30 days
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days * 24 hours * 60 minutes
@@ -55,6 +59,20 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 note_taker = NoteTaker()
 transcription_service = TranscriptionService()
 quiz_generator = QuizGenerator()
+
+# In-memory store for password reset tokens (for demo; use DB/Redis in prod)
+reset_tokens = {}
+
+conf = ConnectionConfig(
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME"),
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD"),
+    MAIL_FROM = os.getenv("MAIL_FROM"),
+    MAIL_PORT = int(os.getenv("MAIL_PORT", 587)),
+    MAIL_SERVER = os.getenv("MAIL_SERVER"),
+    MAIL_STARTTLS = os.getenv("MAIL_STARTTLS", "True") == "True",
+    MAIL_SSL_TLS = os.getenv("MAIL_SSL_TLS", "False") == "True",
+    USE_CREDENTIALS = True
+)
 
 async def generate_more_questions(session_id: str, notes: str):
     """Background task to generate more questions"""
@@ -281,7 +299,25 @@ async def register(user_data: UserCreate):
         raise HTTPException(status_code=400, detail="Username already registered")
     # Use the User model's password hashing method to be consistent with existing users
     user = await DatabaseService.create_user(user_data.email, user_data.username, user_data.password)
-    return {"message": "User registered successfully"}
+    # Automatically log in the user after registration
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=access_token_expires,
+        token_type="access"
+    )
+    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    refresh_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=refresh_token_expires,
+        token_type="refresh"
+    )
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -363,7 +399,11 @@ async def root(request: Request):
         # If we get here, token is valid
         return templates.TemplateResponse("index.html", {"request": request, "authenticated": True})
     except JWTError:
-        return templates.TemplateResponse("index.html", {"request": request, "authenticated": False})
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
 
 @app.get("/dashboards")
 async def show_dashboards(
@@ -392,12 +432,18 @@ async def post_dashboards(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get the user from database
         user = await DatabaseService.get_user_by_username(username)
         if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get all dashboards for the user
         dashboards = await DatabaseService.get_user_dashboards(user.id)
@@ -412,7 +458,11 @@ async def post_dashboards(
             }
         )
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
 
 @app.get("/dashboard/{session_id}")
 async def show_dashboard(
@@ -445,12 +495,18 @@ async def post_dashboard(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get the user from database
         user = await DatabaseService.get_user_by_username(username)
         if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get the dashboard
         dashboard = await DatabaseService.get_dashboard(session_id)
@@ -467,7 +523,11 @@ async def post_dashboard(
             }
         )
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
 
 @app.get("/api/quiz-stats/{session_id}")
 async def get_quiz_stats(session_id: str):
@@ -562,12 +622,18 @@ async def post_profile(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get the user from database
         user = await DatabaseService.get_user_by_username(username)
         if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get user's dashboards
         dashboards = await DatabaseService.get_user_dashboards(user.id)
@@ -599,7 +665,11 @@ async def post_profile(
             }
         )
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
 
 @app.delete("/api/user/delete")
 async def delete_user(current_user: User = Depends(get_current_active_user)):
@@ -632,12 +702,18 @@ async def post_quiz(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Get the user from database
         user = await DatabaseService.get_user_by_username(username)
         if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
             
         # Check if quiz exists
         dashboard = await DatabaseService.get_dashboard(quiz_id)
@@ -649,7 +725,71 @@ async def post_quiz(
             {"request": request, "quiz_id": quiz_id}
         )
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
+
+@app.get("/forgot-password")
+async def forgot_password_page(request: Request):
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+@app.post("/forgot-password")
+async def forgot_password_submit(request: Request, email: str = Form(...)):
+    user = await DatabaseService.get_user_by_email(email)
+    if user:
+        token = secrets.token_urlsafe(32)
+        reset_tokens[token] = user.username
+        reset_link = f"http://localhost:8000/reset-password/{token}"
+        message = MessageSchema(
+            subject="Password Reset Request",
+            recipients=[user.email],
+            body=f"""
+                <div style='font-family: Arial, sans-serif; max-width: 500px; margin: auto; border: 1px solid #eee; border-radius: 8px; padding: 24px; background: #f9f9f9;'>
+                    <h2 style='color: #2c3e50;'>Password Reset Request</h2>
+                    <p>Hi <strong>{user.username}</strong>,</p>
+                    <p>We received a request to reset your password for your LearnAI account.</p>
+                    <p style='margin: 24px 0;'>
+                        <a href='{reset_link}' style='display: inline-block; padding: 12px 24px; background: #3498db; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold;'>
+                            Reset Password
+                        </a>
+                    </p>
+                    <p>If you did not request this, you can safely ignore this email.</p>
+                    <hr style='margin: 24px 0; border: none; border-top: 1px solid #eee;'>
+                    <p style='font-size: 12px; color: #888;'>If the button above does not work, copy and paste this link into your browser:<br>{reset_link}</p>
+                    <p style='font-size: 12px; color: #888;'>Thank you,<br>The LearnAI Team</p>
+                </div>
+            """,
+            subtype="html"
+        )
+        fm = FastMail(conf)
+        await fm.send_message(message)
+    # Always show the same response
+    return templates.TemplateResponse("forgot_password_submitted.html", {"request": request})
+
+@app.get("/reset-password/{token}")
+async def reset_password_page(request: Request, token: str):
+    username = reset_tokens.get(token)
+    if not username:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+
+@app.post("/reset-password/{token}")
+async def reset_password_submit(request: Request, token: str, password: str = Form(...)):
+    username = reset_tokens.get(token)
+    if not username:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    user = await DatabaseService.get_user_by_username(username)
+    if not user:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    # Update password
+    user.hashed_password = User.get_password_hash(password)
+    async with async_session() as session:
+        session.add(user)
+        await session.commit()
+    del reset_tokens[token]
+    return RedirectResponse("/login", status_code=303)
 
 if __name__ == "__main__":
     import uvicorn

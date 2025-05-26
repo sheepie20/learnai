@@ -46,6 +46,20 @@
     </div>
 
     <script>
+        // Token management (copied from login page)
+        const TokenManager = {
+            setTokens(tokens) {
+                localStorage.setItem('access_token', tokens.access_token);
+                localStorage.setItem('refresh_token', tokens.refresh_token);
+                localStorage.setItem('token_expiry', Date.now() + (tokens.expires_in * 1000));
+            },
+            clearTokens() {
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('token_expiry');
+            }
+        };
+
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -67,8 +81,9 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Registration successful, redirect to login
-                    window.location.href = '/login';
+                    // Registration successful, store tokens and redirect to home
+                    TokenManager.setTokens(data);
+                    window.location.href = '/';
                 } else {
                     alert(data.detail || 'Registration failed');
                 }
