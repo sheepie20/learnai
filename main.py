@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict
-from ai_service import NoteTaker, TranscriptionService, QuizGenerator
+from typing import Optional, List, Dict, Any
+from ai_service import NoteTaker, TranscriptionService, QuizGenerator, ChatBot
 from contextlib import asynccontextmanager
 from datetime import timedelta
 import secrets
@@ -138,6 +138,13 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
     set_number: int = 0
+
+class ChatRequest(BaseModel):
+    question: str
+    history: Optional[List[Dict[str, str]]] = None
+
+class ChatResponse(BaseModel):
+    answer: str
 
 @app.post("/generate-notes", response_model=NotesResponse)
 async def generate_notes(
@@ -790,6 +797,32 @@ async def reset_password_submit(request: Request, token: str, password: str = Fo
         await session.commit()
     del reset_tokens[token]
     return RedirectResponse("/login", status_code=303)
+
+@app.get("/chat/{quiz_id}")
+async def show_chat(request: Request, quiz_id: str):
+    dashboard = await DatabaseService.get_dashboard(quiz_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    return templates.TemplateResponse(
+        "chat.html",
+        {"request": request, "quiz_id": quiz_id}
+    )
+
+@app.post("/api/chat/{quiz_id}", response_model=ChatResponse)
+async def chat_with_ai(quiz_id: str, chat_req: ChatRequest):
+    dashboard = await DatabaseService.get_dashboard(quiz_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    chatbot = ChatBot(dashboard.notes)
+    # Restore history if provided
+    if chat_req.history:
+        for msg in chat_req.history:
+            if msg['role'] == 'user':
+                chatbot.add_user_message(msg['content'])
+            elif msg['role'] == 'assistant':
+                chatbot.add_assistant_message(msg['content'])
+    answer = await chatbot.chat(chat_req.question)
+    return {"answer": answer}
 
 if __name__ == "__main__":
     import uvicorn

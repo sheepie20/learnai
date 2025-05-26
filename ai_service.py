@@ -183,3 +183,46 @@ class QuizGenerator:
                     raise Exception("Failed to generate valid quiz questions: JSON parsing error") from e
                 except Exception as e:
                     raise Exception(f"Failed to generate valid quiz questions: {str(e)}")
+                
+class ChatBot:
+    def __init__(self, notes: str):
+        self.api_key = os.getenv("TOGETHER_API_KEY")
+        self.api_url = "https://api.together.xyz/v1/chat/completions"
+        self.system_message = f"""You are a helpful study assistant.
+Please answer questions using only the information in the notes below:
+---
+{notes}
+---
+If you’re not sure about the answer, it’s okay to say “I don’t know.”
+If the question is unrelated to the notes, just let me know that it’s outside the scope."""
+        self.history: List[Dict[str, str]] = []  # List of {role: 'user'/'assistant', content: str}
+
+    def add_user_message(self, message: str):
+        self.history.append({"role": "user", "content": message})
+
+    def add_assistant_message(self, message: str):
+        self.history.append({"role": "assistant", "content": message})
+
+    async def chat(self, question: str) -> str:
+        self.add_user_message(question)
+        messages = [
+            {"role": "system", "content": self.system_message}
+        ] + self.history
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self.api_url,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "deepseek-ai/DeepSeek-V3",
+                    "messages": messages,
+                    "max_tokens": 1024,
+                    "temperature": 0.7
+                }
+            ) as response:
+                result = await response.json()
+                ai_message = result["choices"][0]["message"]["content"]
+                self.add_assistant_message(ai_message)
+                return ai_message
