@@ -47,7 +47,7 @@ A web application that helps users learn by generating detailed notes and intera
    ```
 
 4. Set up environment variables:
-   Create a `.env` file in the project root and add your Together AI API key and other secrets:
+   Create a `.env` file in the project root and add your Google AI API key and other secrets:
    ```
    SECRET_KEY=your_secret_key
    GOOGLE_API_KEY=your_google_api_key
