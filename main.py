@@ -4,12 +4,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict, Any
-from ai_service import NoteTaker, TranscriptionService, QuizGenerator, ChatBot
+from typing import Optional, List, Dict
+from ai_service import NoteTaker, TranscriptionService, QuizGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 import secrets
 from fastapi.responses import RedirectResponse
+
+from ai_service import ChatBot
 
 import uuid
 from models import init_db, User
@@ -138,13 +140,6 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
     set_number: int = 0
-
-class ChatRequest(BaseModel):
-    question: str
-    history: Optional[List[Dict[str, str]]] = None
-
-class ChatResponse(BaseModel):
-    answer: str
 
 @app.post("/generate-notes", response_model=NotesResponse)
 async def generate_notes(
@@ -800,29 +795,344 @@ async def reset_password_submit(request: Request, token: str, password: str = Fo
 
 @app.get("/chat/{quiz_id}")
 async def show_chat(request: Request, quiz_id: str):
+    # Check if quiz exists
     dashboard = await DatabaseService.get_dashboard(quiz_id)
     if not dashboard:
         raise HTTPException(status_code=404, detail="Quiz not found")
+    
     return templates.TemplateResponse(
-        "chat.html",
+        "chat.html", 
         {"request": request, "quiz_id": quiz_id}
     )
 
-@app.post("/api/chat/{quiz_id}", response_model=ChatResponse)
-async def chat_with_ai(quiz_id: str, chat_req: ChatRequest):
-    dashboard = await DatabaseService.get_dashboard(quiz_id)
-    if not dashboard:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    chatbot = ChatBot(dashboard.notes)
-    # Restore history if provided
-    if chat_req.history:
-        for msg in chat_req.history:
-            if msg['role'] == 'user':
-                chatbot.add_user_message(msg['content'])
-            elif msg['role'] == 'assistant':
-                chatbot.add_assistant_message(msg['content'])
-    answer = await chatbot.chat(chat_req.question)
-    return {"answer": answer}
+@app.post("/chat/{quiz_id}")
+async def post_chat(
+    request: Request,
+    quiz_id: str,
+    token: str = Form(...)  # Get token from form data
+):
+    # Manually validate the token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Get the user from database
+        user = await DatabaseService.get_user_by_username(username)
+        if not user:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Check if quiz exists
+        dashboard = await DatabaseService.get_dashboard(quiz_id)
+        if not dashboard:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        return templates.TemplateResponse(
+            "chat.html", 
+            {"request": request, "quiz_id": quiz_id}
+        )
+    except JWTError:
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
+
+class ChatRequest(BaseModel):
+    question: str
+    history: Optional[List[Dict[str, str]]] = []
+
+@app.post("/api/chat/{quiz_id}")
+async def chat_with_ai(quiz_id: str, request: ChatRequest):
+    try:
+        # Get the dashboard to access the notes
+        dashboard = await DatabaseService.get_dashboard(quiz_id)
+        if not dashboard:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        # Initialize the chatbot with the notes
+        chatbot = ChatBot(dashboard.notes)
+        
+        # Add previous conversation history if provided
+        if request.history:
+            for msg in request.history[:-1]:  # Skip the last message (current question)
+                if msg["role"] == "user":
+                    chatbot.add_user_message(msg["content"])
+                elif msg["role"] == "assistant":
+                    chatbot.add_assistant_message(msg["content"])
+        
+        # Get response from the chatbot
+        answer = await chatbot.chat(request.question)
+        
+        return {"answer": answer}
+    except Exception as e:
+        print(f"Error in chat_with_ai: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get a response from the AI. Please try again."
+        )
+
+@app.post("/submit-quiz-results/{session_id}")
+async def submit_quiz_results(session_id: str, results: dict):
+    try:
+        # Add the quiz attempt
+        await DatabaseService.add_quiz_attempt(
+            session_id=session_id,
+            questions_answered=results["total_questions"],
+            correct_answers=results["correct_answers"],
+            streak=results.get("streak", 0)
+        )
+        
+        # Update overall dashboard stats
+        dashboard = await DatabaseService.get_dashboard(session_id)
+        if dashboard:
+            new_total = dashboard.total_questions + results["total_questions"]
+            new_correct = dashboard.total_correct + results["correct_answers"]
+            new_streak = max(dashboard.best_streak, results.get("streak", 0))
+            
+            await DatabaseService.update_dashboard_stats(
+                session_id=session_id,
+                total_questions=new_total,
+                total_correct=new_correct,
+                best_streak=new_streak
+            )
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit results: {str(e)}")
+
+@app.delete("/api/dashboard/{session_id}")
+async def delete_dashboard(session_id: str):
+    try:
+        success = await DatabaseService.delete_dashboard(session_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return {"success": True, "message": "Dashboard deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting dashboard: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete dashboard")
+
+@app.get("/profile")
+async def profile_page(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
+    # Get user's dashboards
+    dashboards = await DatabaseService.get_user_dashboards(current_user.id)
+    
+    # Calculate statistics
+    total_dashboards = len(dashboards)
+    total_quizzes = sum(1 for d in dashboards if d.total_questions > 0)
+    
+    # Calculate average score
+    total_correct = sum(d.total_correct for d in dashboards)
+    total_questions = sum(d.total_questions for d in dashboards)
+    avg_score = round((total_correct / total_questions * 100) if total_questions > 0 else 0, 1)
+    
+    # Get best streak across all dashboards
+    best_streak = max((d.best_streak for d in dashboards), default=0)
+    
+    return templates.TemplateResponse(
+        "profile.html",
+        {
+            "request": request,
+            "username": current_user.username,
+            "email": current_user.email,
+            "joined_date": current_user.created_at,
+            "total_dashboards": total_dashboards,
+            "total_quizzes": total_quizzes,
+            "avg_score": avg_score,
+            "best_streak": best_streak
+        }
+    )
+
+@app.post("/profile")
+async def post_profile(
+    request: Request,
+    token: str = Form(...)  # Get token from form data
+):
+    # Manually validate the token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Get the user from database
+        user = await DatabaseService.get_user_by_username(username)
+        if not user:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Get user's dashboards
+        dashboards = await DatabaseService.get_user_dashboards(user.id)
+        
+        # Calculate statistics
+        total_dashboards = len(dashboards)
+        total_quizzes = sum(1 for d in dashboards if d.get('total_questions', 0) > 0)
+        
+        # Calculate average score
+        total_correct = sum(d.get('total_correct', 0) for d in dashboards)
+        total_questions = sum(d.get('total_questions', 0) for d in dashboards)
+        avg_score = round((total_correct / total_questions * 100) if total_questions > 0 else 0, 1)
+        
+        # Get best streak across all dashboards
+        best_streak = max((d.get('best_streak', 0) for d in dashboards), default=0)
+        
+        # Return the profile template
+        return templates.TemplateResponse(
+            "profile.html",
+            {
+                "request": request,
+                "username": user.username,
+                "email": user.email,
+                "joined_date": user.created_at,
+                "total_dashboards": total_dashboards,
+                "total_quizzes": total_quizzes,
+                "avg_score": avg_score,
+                "best_streak": best_streak
+            }
+        )
+    except JWTError:
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
+
+@app.delete("/api/user/delete")
+async def delete_user(current_user: User = Depends(get_current_active_user)):
+    try:
+        # Get all user's dashboards
+        dashboards = await DatabaseService.get_user_dashboards(current_user.id)
+        
+        # Delete all dashboards
+        for dashboard in dashboards:
+            await DatabaseService.delete_dashboard(dashboard['id'])
+        
+        # Delete the user
+        await DatabaseService.delete_user(current_user.id)
+        
+        return {"message": "User account deleted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
+@app.post("/quiz/{quiz_id}")
+async def post_quiz(
+    request: Request,
+    quiz_id: str,
+    token: str = Form(...)  # Get token from form data
+):
+    # Manually validate the token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Get the user from database
+        user = await DatabaseService.get_user_by_username(username)
+        if not user:
+            return templates.TemplateResponse(
+                "logout.html",
+                {"request": request}
+            )
+            
+        # Check if quiz exists
+        dashboard = await DatabaseService.get_dashboard(quiz_id)
+        if not dashboard:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        return templates.TemplateResponse(
+            "quiz.html", 
+            {"request": request, "quiz_id": quiz_id}
+        )
+    except JWTError:
+        # Instead of raising an error, log the user out and redirect to login
+        return templates.TemplateResponse(
+            "logout.html",
+            {"request": request}
+        )
+
+@app.get("/forgot-password")
+async def forgot_password_page(request: Request):
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+@app.post("/forgot-password")
+async def forgot_password_submit(request: Request, email: str = Form(...)):
+    user = await DatabaseService.get_user_by_email(email)
+    if user:
+        token = secrets.token_urlsafe(32)
+        reset_tokens[token] = user.username
+        reset_link = f"http://localhost:8000/reset-password/{token}"
+        message = MessageSchema(
+            subject="Password Reset Request",
+            recipients=[user.email],
+            body=f"""
+                <div style='font-family: Arial, sans-serif; max-width: 500px; margin: auto; border: 1px solid #eee; border-radius: 8px; padding: 24px; background: #f9f9f9;'>
+                    <h2 style='color: #2c3e50;'>Password Reset Request</h2>
+                    <p>Hi <strong>{user.username}</strong>,</p>
+                    <p>We received a request to reset your password for your LearnAI account.</p>
+                    <p style='margin: 24px 0;'>
+                        <a href='{reset_link}' style='display: inline-block; padding: 12px 24px; background: #3498db; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold;'>
+                            Reset Password
+                        </a>
+                    </p>
+                    <p>If you did not request this, you can safely ignore this email.</p>
+                    <hr style='margin: 24px 0; border: none; border-top: 1px solid #eee;'>
+                    <p style='font-size: 12px; color: #888;'>If the button above does not work, copy and paste this link into your browser:<br>{reset_link}</p>
+                    <p style='font-size: 12px; color: #888;'>Thank you,<br>The LearnAI Team</p>
+                </div>
+            """,
+            subtype="html"
+        )
+        fm = FastMail(conf)
+        await fm.send_message(message)
+    # Always show the same response
+    return templates.TemplateResponse("forgot_password_submitted.html", {"request": request})
+
+@app.get("/reset-password/{token}")
+async def reset_password_page(request: Request, token: str):
+    username = reset_tokens.get(token)
+    if not username:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+
+@app.post("/reset-password/{token}")
+async def reset_password_submit(request: Request, token: str, password: str = Form(...)):
+    username = reset_tokens.get(token)
+    if not username:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    user = await DatabaseService.get_user_by_username(username)
+    if not user:
+        return templates.TemplateResponse("reset_password_invalid.html", {"request": request})
+    # Update password
+    user.hashed_password = User.get_password_hash(password)
+    async with async_session() as session:
+        session.add(user)
+        await session.commit()
+    del reset_tokens[token]
+    return RedirectResponse("/login", status_code=303)
 
 if __name__ == "__main__":
     import uvicorn
