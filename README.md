@@ -17,7 +17,7 @@ A web application that helps users learn by generating detailed notes and intera
 - **Backend**: FastAPI (Python)
 - **Frontend**: HTML, CSS, JavaScript (with Jinja2 templating)
 - **Database**: SQLite (via SQLAlchemy, aiosqlite)
-- **AI/ML**: Together AI (DeepSeek-V3 model)
+- **AI/ML**: Google Gemini 2.5 Flash model
 - **Authentication**: JWT (JSON Web Tokens)
 - **Video Processing**: YouTubeTranscriptAPI (for YouTube transcription)
 - **Math/Markdown**: MathJax for LaTeX, marked.js for Markdown, highlight.js for code
@@ -25,7 +25,7 @@ A web application that helps users learn by generating detailed notes and intera
 ## Prerequisites
 
 - Python 3.8+
-- Together AI API key
+- Google AI API key
 
 ## Installation
 
@@ -59,12 +59,6 @@ A web application that helps users learn by generating detailed notes and intera
    MAIL_SERVER=your_smtp_server
    MAIL_STARTTLS=your_starttls
    MAIL_SSL_TLS=your_ssl_tls
-
-   SCW_ACCESS_KEY=your_scw_access_key
-   SCW_SECRET_KEY=your_scw_secret_key
-   SCW_DEFAULT_ORGANIZATION_ID=your_scw_default_organization_id
-   SCW_DEFAULT_PROJECT_ID=your_scw_default_project_id
-
    ```
 
 5. Initialize the database:
@@ -88,6 +82,7 @@ Or... go to https://learnai.sheepie.dev to use it officially.
 - `POST /generate-notes`: Generate notes from text or YouTube URL
 - `POST /generate-quiz`: Generate a quiz from notes
 - `GET /quiz/{quiz_id}`: View a specific quiz
+- `POST /quiz/{quiz_id}`: Submit quiz answers
 - `POST /register`: Register a new user
 - `POST /token`: Authenticate and get access token
 - `GET /dashboards`: View user's learning dashboards
@@ -115,7 +110,7 @@ Or... go to https://learnai.sheepie.dev to use it officially.
 
 ## Acknowledgments
 
-- Together AI for the powerful language models
+- Google for the powerful Gemini language models
 - FastAPI for the awesome web framework
 - The open-source community for various libraries and tools used in this project
 - MathJax, marked.js, and highlight.js for rich chat and note formatting
