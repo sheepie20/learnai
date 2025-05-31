@@ -31,8 +31,8 @@ A web application that helps users learn by generating detailed notes and intera
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd learnai/revamp
+   git clone https://github.com/sheepie20/learnai
+   cd learnai
    ```
 
 2. Create and activate a virtual environment:
@@ -49,17 +49,22 @@ A web application that helps users learn by generating detailed notes and intera
 4. Set up environment variables:
    Create a `.env` file in the project root and add your Together AI API key and other secrets:
    ```
-   TOGETHER_API_KEY=your_api_key_here
-   SECRET_KEY=your_secret_key_here
-   ALGORITHM=HS256
-   ACCESS_TOKEN_EXPIRE_MINUTES=43200  # 30 days
-   MAIL_USERNAME=your_email@example.com
-   MAIL_PASSWORD=your_email_password
-   MAIL_FROM=your_email@example.com
-   MAIL_PORT=587
-   MAIL_SERVER=smtp.example.com
-   MAIL_STARTTLS=True
-   MAIL_SSL_TLS=False
+SECRET_KEY=your_secret_key
+GOOGLE_API_KEY=your_google_api_key
+
+MAIL_USERNAME=your_email
+MAIL_PASSWORD=your_email_app_password
+MAIL_FROM=your_email
+MAIL_PORT=your_smtp_port
+MAIL_SERVER=your_smtp_server
+MAIL_STARTTLS=your_starttls
+MAIL_SSL_TLS=your_ssl_tls
+
+SCW_ACCESS_KEY=your_scw_access_key
+SCW_SECRET_KEY=your_scw_secret_key
+SCW_DEFAULT_ORGANIZATION_ID=your_scw_default_organization_id
+SCW_DEFAULT_PROJECT_ID=your_scw_default_project_id
+
    ```
 
 5. Initialize the database:
@@ -75,6 +80,8 @@ uvicorn main:app --reload
 ```
 
 The application will be available at `http://localhost:8000`
+
+Or... go to https://learnai.sheepie.dev to use it officially.
 
 ## API Endpoints
 
@@ -97,18 +104,6 @@ The application will be available at `http://localhost:8000`
 - `youtube.py`: YouTube video processing utilities
 - `templates/`: HTML templates (dashboard, quiz, chat, etc.)
 - `static/`: Static files (CSS, JavaScript, images)
-
-## Environment Variables
-
-- `TOGETHER_API_KEY`: Your Together AI API key (required)
-- `SECRET_KEY`: Secret key for JWT token signing (required)
-- `ALGORITHM`: Algorithm for JWT (default: HS256)
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration time (default: 43200 for 30 days)
-- `MAIL_*`: Email settings for password reset (see example above)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
